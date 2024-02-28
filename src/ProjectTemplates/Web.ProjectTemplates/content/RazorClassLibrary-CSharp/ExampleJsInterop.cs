@@ -11,15 +11,17 @@ namespace Company.RazorClassLibrary1;
 
 public class ExampleJsInterop : IAsyncDisposable
 {
-    private readonly Lazy<Task<IJSObjectReference>> moduleTask;
+    public CancellationToken Cancellation { get; }
+    private readonly AsyncLazy<IJSObjectReference> moduleTask;
 
     public ExampleJsInterop(IJSRuntime jsRuntime)
     {
-        moduleTask = new (() => jsRuntime.InvokeAsync<IJSObjectReference>(
-            "import", "./_content/Company.RazorClassLibrary1/exampleJsInterop.js").AsTask());
+        moduleTask = new AsyncLazy<IJSObjectReference>(
+            () => jsRuntime.InvokeAsync<IJSObjectReference>("import", "./_content/Flightplan.RazorLibrary/exampleJsInterop.js").AsTask(),
+            Cancellation);
     }
 
-    public async ValueTask<string> Prompt(string message)
+    public async ValueTask<string> PromptAsync(string message)
     {
         var module = await moduleTask.Value;
         return await module.InvokeAsync<string>("showPrompt", message);
@@ -32,5 +34,17 @@ public class ExampleJsInterop : IAsyncDisposable
             var module = await moduleTask.Value;
             await module.DisposeAsync();
         }
+        GC.SuppressFinalize(this);
     }
+}
+
+public class AsyncLazy<T> : Lazy<Task<T>>
+{
+    public AsyncLazy(Func<T> valueFactory, CancellationToken cancellation) :
+        base(() => Task.Factory.StartNew(valueFactory, cancellation, TaskCreationOptions.PreferFairness, TaskScheduler.Current))
+    { }
+
+    public AsyncLazy(Func<Task<T>> taskFactory, CancellationToken cancellation) :
+        base(() => Task.Factory.StartNew(() => taskFactory(), cancellation, TaskCreationOptions.PreferFairness, TaskScheduler.Current).Unwrap())
+    { }
 }
